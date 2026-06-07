@@ -31,9 +31,11 @@ if "teams" not in st.session_state:
 if "current_lot" not in st.session_state:
     st.session_state.current_lot = 1
 
-if "current_turn" not in st.session_state:
-    # Game starts with a random selector for Lot 1
-    st.session_state.current_turn = random.choice(["Selector 1", "Selector 2", "Selector 3", "Selector 4"])
+# Maintain the exact sequence queue for the active lot
+if "draft_sequence" not in st.session_state:
+    selectors = ["Selector 1", "Selector 2", "Selector 3", "Selector 4"]
+    random.shuffle(selectors)
+    st.session_state.draft_sequence = selectors
 
 st.title("🏏 Cricket Tournament Draft Portal")
 
@@ -46,6 +48,18 @@ page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Tea
 if page == "Admin Dashboard":
     st.header("⚙️ Admin Dashboard: Player & Lot Management")
     
+    # NEW FEATURE: MANUAL SHUFFLE BUTTON FOR ADMIN
+    st.subheader("🎲 Draft Sequence Shuffler")
+    st.write(f"Current Order for Lot {st.session_state.current_lot}: **{' ➡️ '.join(st.session_state.draft_sequence)}**")
+    if st.button("🔀 Force Shuffle Order Now", type="secondary"):
+        selectors = ["Selector 1", "Selector 2", "Selector 3", "Selector 4"]
+        random.shuffle(selectors)
+        st.session_state.draft_sequence = selectors
+        st.success(f"🎲 Order shuffled! New sequence: {' ➡️ '.join(st.session_state.draft_sequence)}")
+        st.rerun()
+        
+    st.write("---")
+
     # Form to ADD players
     with st.form("add_player_form", clear_on_submit=True):
         st.subheader("➕ Add New Player")
@@ -55,12 +69,120 @@ if page == "Admin Dashboard":
         
         submit = st.form_submit_button("Add Player")
         if submit and name:
-            # Check if lot already has 4 players
             lot_count = sum(1 for p in st.session_state.players if p["lot"] == lot_number)
             if lot_count >= 4:
                 st.error(f"❌ Lot {lot_number} is already full! (Max 4 players per lot)")
             else:
                 st.session_state.players.append({"name": name, "role": role, "lot": lot_number})
+                st.success(f"✅ Added {name} to Lot {lot_number} as a {role}")
+                st.rerun()
+
+    st.write("---")
+    
+    # Form to DELETE players
+    st.subheader("🗑️ Delete Existing Player")
+    if st.session_state.players:
+        player_names = [p["name"] for p in st.session_state.players]
+        player_to_delete = st.selectbox("Select player profile to remove:", player_names)
+        
+        if st.button("Delete Player Profile", type="primary"):
+            st.session_state.players = [p for p in st.session_state.players if p["name"] != player_to_delete]
+            for team in st.session_state.teams:
+                st.session_state.teams[team] = [p for p in st.session_state.teams[team] if p["name"] != player_to_delete]
+            st.success(f"🗑️ {player_to_delete} has been completely removed.")
+            st.rerun()
+    else:
+        st.info("No players available to delete.")
+
+    st.write("---")
+    st.subheader("Current Player Lots")
+    if st.session_state.players:
+        df = pd.DataFrame(st.session_state.players)
+        st.dataframe(df.sort_values(by=["lot", "role"]), use_container_width=True)
+        st.metric(label="Total Registered Players", value=len(st.session_state.players))
+    else:
+        st.info("No players registered yet.")
+
+# ------------------------------------------------------------------
+# SELECTOR DRAFT ROOM
+# ------------------------------------------------------------------
+elif page == "Selector Draft Room":
+    st.header("🎯 Live Draft Room")
+    
+    picked_players = [p for team in st.session_state.teams.values() for p in team]
+    available_in_lot = [p for p in st.session_state.players if p["lot"] == st.session_state.current_lot and p["name"] not in picked_players]
+    
+    # Handle Lot transitions and auto-shuffling for the incoming lot
+    if not available_in_lot:
+        remaining_lots = [p["lot"] for p in st.session_state.players if p["name"] not in picked_players]
+        if remaining_lots:
+            st.session_state.current_lot = min(remaining_lots)
+            
+            # Auto-shuffle a fresh sequence queue for the new lot
+            selectors = ["Selector 1", "Selector 2", "Selector 3", "Selector 4"]
+            random.shuffle(selectors)
+            st.session_state.draft_sequence = selectors
+            
+            st.rerun()
+        else:
+            st.balloons()
+            st.success("🎉 All lots completed! The draft is officially over.")
+            st.stop()
+
+    # Determine current active picker based on how many players are left in the current lot
+    # 4 players left -> 1st in sequence picks
+    # 3 players left -> 2nd in sequence picks, etc.
+    players_picked_in_this_lot = 4 - len(available_in_lot)
+    current_turn_selector = st.session_state.draft_sequence[players_picked_in_this_lot]
+
+    # NEW VISUAL FEATURE: Show the structural sequence of the active lot pick order
+    st.subheader("📋 Lot Picking Order")
+    cols = st.columns(4)
+    for index, selector_name in enumerate(st.session_state.draft_sequence):
+        with cols[index]:
+            if index == players_picked_in_this_lot:
+                st.markdown(f"🎨 **Pick {index+1}:** \n <span style='color:#FF4B4B; font-weight:bold;'>👉 {selector_name} (UP NOW)</span>", unsafe_allow_html=True)
+            elif index < players_picked_in_this_lot:
+                st.markdown(f"✅ **Pick {index+1}:** \n ~~{selector_name}~~")
+            else:
+                st.markdown(f"⏳ **Pick {index+1}:** \n {selector_name}")
+
+    st.write("---")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"### 📦 Current Active: **Lot {st.session_state.current_lot}**")
+        st.markdown(f"**Skill Level/Type:** {available_in_lot[0]['role'] if available_in_lot else 'N/A'}")
+    with col2:
+        st.markdown(f"### 🕒 Turn to Pick: <span style='color:#FF4B4B'>{current_turn_selector}</span>", unsafe_allow_html=True)
+
+    st.write("---")
+    st.subheader("Available Players in this Lot")
+    
+    options = [p["name"] for p in available_in_lot]
+    selected_player_name = st.radio("Choose a player to draft:", options)
+    
+    if st.button("Confirm Selection ➡️"):
+        player_obj = next(p for p in available_in_lot if p["name"] == selected_player_name)
+        st.session_state.teams[current_turn_selector].append(player_obj)
+        st.toast(f"{selected_player_name} drafted successfully by {current_turn_selector}!")
+        st.rerun()
+
+# ------------------------------------------------------------------
+# TEAM ROSTERS
+# ------------------------------------------------------------------
+elif page == "Team Rosters":
+    st.header("📋 Current Team Squads")
+    
+    cols = st.columns(4)
+    for i, (team_name, squad) in enumerate(st.session_state.teams.items()):
+        with cols[i]:
+            st.subheader(team_name)
+            if squad:
+                for player in squad:
+                    st.write(f"• **{player['name']}** ({player['role']}) - _Lot {player['lot']}_")
+            else:
+                st.write("_No players drafted yet_")
                 st.success(f"✅ Added {name} to Lot {lot_number} as a {role}")
                 st.rerun()
 
