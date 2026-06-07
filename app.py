@@ -44,8 +44,9 @@ page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Tea
 if page == "Admin Dashboard":
     st.header("⚙️ Admin Dashboard: Player & Lot Management")
     
+    # Form to ADD players
     with st.form("add_player_form", clear_on_submit=True):
-        st.subheader("Add New Player to a Lot")
+        st.subheader("➕ Add New Player")
         name = st.text_input("Player Name")
         role = st.selectbox("Role/Skill", ["Batter", "Bowler", "All-rounder"])
         lot_number = st.number_input("Assign to Lot Number", min_value=1, max_value=15, value=1, step=1)
@@ -59,18 +60,36 @@ if page == "Admin Dashboard":
             else:
                 st.session_state.players.append({"name": name, "role": role, "lot": lot_number})
                 st.success(f"✅ Added {name} to Lot {lot_number} as a {role}")
+                st.rerun()
+
+    st.write("---")
+    
+    # New Form to DELETE players
+    st.subheader("🗑️ Delete Existing Player")
+    if st.session_state.players:
+        # Create a clean list of names for the dropdown
+        player_names = [p["name"] for p in st.session_state.players]
+        player_to_delete = st.selectbox("Select player profile to remove:", player_names)
+        
+        if st.button("Delete Player Profile", type="primary"):
+            # Remove from global player list
+            st.session_state.players = [p for p in st.session_state.players if p["name"] != player_to_delete]
+            
+            # Also remove from any selector team if they were already drafted
+            for team in st.session_state.teams:
+                st.session_state.teams[team] = [p for p in st.session_state.teams[team] if p["name"] != player_to_delete]
+                
+            st.success(f"🗑️ {player_to_delete} has been completely removed.")
+            st.rerun()
+    else:
+        st.info("No players available to delete.")
 
     st.write("---")
     st.subheader("Current Player Lots")
     if st.session_state.players:
         df = pd.DataFrame(st.session_state.players)
-        # Count players per lot to show admin stats
-        lot_counts = df['lot'].value_counts().to_dict()
-        
         st.dataframe(df.sort_values(by=["lot", "role"]), use_container_width=True)
-        
         st.metric(label="Total Registered Players", value=len(st.session_state.players))
-        st.caption("Tip: Ensure every lot has exactly 4 players before starting the draft.")
     else:
         st.info("No players registered yet.")
 
@@ -80,12 +99,10 @@ if page == "Admin Dashboard":
 elif page == "Selector Draft Room":
     st.header("🎯 Live Draft Room")
     
-    # Filter players in the current active lot who haven't been picked yet
     picked_players = [p for team in st.session_state.teams.values() for p in team]
     available_in_lot = [p for p in st.session_state.players if p["lot"] == st.session_state.current_lot and p["name"] not in picked_players]
     
     if not available_in_lot:
-        # Check if there are higher lots available
         remaining_lots = [p["lot"] for p in st.session_state.players if p["name"] not in picked_players]
         if remaining_lots:
             st.session_state.current_lot = min(remaining_lots)
@@ -95,7 +112,6 @@ elif page == "Selector Draft Room":
             st.success("🎉 All lots completed! The draft is officially over.")
             st.stop()
 
-    # Display Current Status
     col1, col2 = st.columns(2)
     with col1:
         st.markdown(f"### 📦 Current Active: **Lot {st.session_state.current_lot}**")
@@ -106,16 +122,13 @@ elif page == "Selector Draft Room":
     st.write("---")
     st.subheader("Available Players in this Lot")
     
-    # Create selection layout
     options = [p["name"] for p in available_in_lot]
     selected_player_name = st.radio("Choose a player to draft:", options)
     
     if st.button("Confirm Selection ➡️"):
-        # Add to selector's team
         player_obj = next(p for p in available_in_lot if p["name"] == selected_player_name)
         st.session_state.teams[st.session_state.current_turn].append(player_obj)
         
-        # Determine next selector's turn (1 -> 2 -> 3 -> 4 -> 1)
         selectors = ["Selector 1", "Selector 2", "Selector 3", "Selector 4"]
         current_idx = selectors.index(st.session_state.current_turn)
         next_idx = (current_idx + 1) % 4
