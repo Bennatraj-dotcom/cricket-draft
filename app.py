@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import random
 import time
+from fpdf import FPDF
 
 # Initialize session state for single-device data persistence
 if "players" not in st.session_state:
@@ -40,7 +41,35 @@ st.title("🏏 Cricket Tournament Draft Portal")
 st.caption("🎙️ Admin-Led Central Control Mode")
 
 # Sidebar Navigation
-page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Team Rosters"], key="nav_menu_final")
+page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Team Rosters"], key="nav_menu_v4")
+
+# Helper function to generate PDF bytes
+def generate_pdf(teams_data):
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Title Block
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.cell(0, 10, "Cricket Tournament - Final Squads", ln=True, align="C")
+    pdf.set_font("Helvetica", "I", 10)
+    pdf.cell(0, 10, f"Generated on: {time.strftime('%Y-%m-%d %H:%M:%S')}", ln=True, align="C")
+    pdf.ln(10)
+    
+    # Loop through teams and construct columns/lists
+    for team_name, squad in teams_data.items():
+        pdf.set_font("Helvetica", "B", 14)
+        # Highlight team header background color gray
+        pdf.cell(0, 10, f"=== {team_name} ===", ln=True, fill=False)
+        pdf.set_font("Helvetica", "", 11)
+        
+        if squad:
+            for i, player in enumerate(squad, 1):
+                pdf.cell(0, 8, f"{i}. {player['name']} ({player['role']}) - Lot {player['lot']}", ln=True)
+        else:
+            pdf.cell(0, 8, "No players drafted yet.", ln=True)
+        pdf.ln(5)
+        
+    return pdf.output()
 
 # ------------------------------------------------------------------
 # ADMIN DASHBOARD
@@ -73,9 +102,9 @@ if page == "Admin Dashboard":
     st.subheader("🗑️ Delete Existing Player")
     if st.session_state.players:
         player_options = [f"{p['name']} (Lot {p['lot']} - {p['role']})" for p in st.session_state.players]
-        player_to_delete_str = st.selectbox("Select player profile to remove:", player_options, key="delete_select_final")
+        player_to_delete_str = st.selectbox("Select player profile to remove:", player_options, key="delete_select_v4")
         
-        if st.button("Delete Player Profile", type="primary", key="del_btn_final"):
+        if st.button("Delete Player Profile", type="primary", key="del_btn_v4"):
             idx = player_options.index(player_to_delete_str)
             target_player = st.session_state.players[idx]
             st.session_state.players.pop(idx)
@@ -141,7 +170,7 @@ elif page == "Selector Draft Room":
     current_turn_selector = st.session_state.draft_sequence[players_picked_in_this_lot]
 
     if players_picked_in_this_lot == 0:
-        if st.button("🔀 Shuffle Pick Order for this Lot", type="secondary", key="shuffle_final"):
+        if st.button("🔀 Shuffle Pick Order for this Lot", type="secondary", key="shuffle_v4"):
             selectors = ["Selector 1", "Selector 2", "Selector 3", "Selector 4"]
             random.shuffle(selectors)
             st.session_state.draft_sequence = selectors
@@ -175,10 +204,10 @@ elif page == "Selector Draft Room":
     options = [p["name"] for p in available_in_lot]
     
     if options:
-        radio_id = f"rad_l{st.session_state.current_lot}_p{players_picked_in_this_lot}_len{len(options)}"
+        radio_id = f"rad_v4_l{st.session_state.current_lot}_p{players_picked_in_this_lot}"
         selected_player_name = st.radio("Select the player called out by the captain:", options, key=radio_id)
         
-        if st.button("Confirm Selection ➡️", type="primary", use_container_width=True, key=f"btn_{radio_id}"):
+        if st.button("Confirm Selection ➡️", type="primary", use_container_width=True, key=f"btn_v4_{radio_id}"):
             with st.spinner(f"Processing pick... Assigning to {current_turn_selector}"):
                 player_obj = next(p for p in available_in_lot if p["name"] == selected_player_name)
                 st.session_state.teams[current_turn_selector].append(player_obj)
@@ -192,6 +221,22 @@ elif page == "Selector Draft Room":
 # ------------------------------------------------------------------
 elif page == "Team Rosters":
     st.header("📋 Current Team Squads")
+    
+    # NEW FEATURE: PDF DOWNLOAD BUTTON
+    try:
+        pdf_bytes = generate_pdf(st.session_state.teams)
+        st.download_button(
+            label="📥 Download Rosters as PDF",
+            data=pdf_bytes,
+            file_name="cricket_squads_final.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+            type="primary"
+        )
+    except Exception as e:
+        st.error(f"Error compiling PDF: {e}")
+        
+    st.write("---")
     
     cols = st.columns(4)
     for i, (team_name, squad) in enumerate(st.session_state.teams.items()):
