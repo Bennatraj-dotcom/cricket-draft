@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import random
 
 # Initialize session state for data persistence
 if "players" not in st.session_state:
@@ -31,7 +32,8 @@ if "current_lot" not in st.session_state:
     st.session_state.current_lot = 1
 
 if "current_turn" not in st.session_state:
-    st.session_state.current_turn = "Selector 1"
+    # Game starts with a random selector for Lot 1
+    st.session_state.current_turn = random.choice(["Selector 1", "Selector 2", "Selector 3", "Selector 4"])
 
 st.title("🏏 Cricket Tournament Draft Portal")
 
@@ -64,18 +66,16 @@ if page == "Admin Dashboard":
 
     st.write("---")
     
-    # New Form to DELETE players
+    # Form to DELETE players
     st.subheader("🗑️ Delete Existing Player")
     if st.session_state.players:
-        # Create a clean list of names for the dropdown
         player_names = [p["name"] for p in st.session_state.players]
         player_to_delete = st.selectbox("Select player profile to remove:", player_names)
         
         if st.button("Delete Player Profile", type="primary"):
-            # Remove from global player list
             st.session_state.players = [p for p in st.session_state.players if p["name"] != player_to_delete]
             
-            # Also remove from any selector team if they were already drafted
+            # Remove from selector teams if already drafted
             for team in st.session_state.teams:
                 st.session_state.teams[team] = [p for p in st.session_state.teams[team] if p["name"] != player_to_delete]
                 
@@ -102,10 +102,16 @@ elif page == "Selector Draft Room":
     picked_players = [p for team in st.session_state.teams.values() for p in team]
     available_in_lot = [p for p in st.session_state.players if p["lot"] == st.session_state.current_lot and p["name"] not in picked_players]
     
+    # Dynamic transition logic if current lot runs dry
     if not available_in_lot:
         remaining_lots = [p["lot"] for p in st.session_state.players if p["name"] not in picked_players]
         if remaining_lots:
             st.session_state.current_lot = min(remaining_lots)
+            
+            # CRITICAL UPDATE: Randomize who gets the 1st pick of this new lot
+            selectors = ["Selector 1", "Selector 2", "Selector 3", "Selector 4"]
+            st.session_state.current_turn = random.choice(selectors)
+            
             st.rerun()
         else:
             st.balloons()
@@ -129,6 +135,7 @@ elif page == "Selector Draft Room":
         player_obj = next(p for p in available_in_lot if p["name"] == selected_player_name)
         st.session_state.teams[st.session_state.current_turn].append(player_obj)
         
+        # Maintain standard rotation order AFTER the random start has been assigned
         selectors = ["Selector 1", "Selector 2", "Selector 3", "Selector 4"]
         current_idx = selectors.index(st.session_state.current_turn)
         next_idx = (current_idx + 1) % 4
