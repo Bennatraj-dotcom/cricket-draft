@@ -32,6 +32,7 @@ if "teams" not in st.session_state:
 if "current_lot" not in st.session_state:
     st.session_state.current_lot = 1
 
+# Generate a randomized sequence order for the very first lot
 if "draft_sequence" not in st.session_state:
     selectors = ["Selector 1", "Selector 2", "Selector 3", "Selector 4"]
     random.shuffle(selectors)
@@ -41,9 +42,9 @@ st.title("🏏 Cricket Tournament Draft Portal")
 st.caption("🎙️ Admin-Led Central Control Mode")
 
 # Sidebar Navigation
-page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Team Rosters"], key="nav_menu_v5")
+page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Team Rosters"], key="nav_menu_v6")
 
-# Helper function to generate PDF bytes with fpdf2 format fix
+# Helper function to generate PDF bytes
 def generate_pdf(teams_data):
     pdf = FPDF()
     pdf.add_page()
@@ -101,9 +102,9 @@ if page == "Admin Dashboard":
     st.subheader("🗑️ Delete Existing Player")
     if st.session_state.players:
         player_options = [f"{p['name']} (Lot {p['lot']} - {p['role']})" for p in st.session_state.players]
-        player_to_delete_str = st.selectbox("Select player profile to remove:", player_options, key="delete_select_v5")
+        player_to_delete_str = st.selectbox("Select player profile to remove:", player_options, key="delete_select_v6")
         
-        if st.button("Delete Player Profile", type="primary", key="del_btn_v5"):
+        if st.button("Delete Player Profile", type="primary", key="del_btn_v6"):
             idx = player_options.index(player_to_delete_str)
             target_player = st.session_state.players[idx]
             st.session_state.players.pop(idx)
@@ -154,9 +155,14 @@ elif page == "Selector Draft Room":
                 
         if remaining_lots:
             st.session_state.current_lot = min(remaining_lots)
-            selectors = ["Selector 1", "Selector 2", "Selector 3", "Selector 4"]
-            random.shuffle(selectors)
-            st.session_state.draft_sequence = selectors
+            
+            # ROTATION RULE APPLIED HERE: Left-shift rotation based on previous lot order
+            # The first selector goes to the back, everyone else slides up one spot
+            old_sequence = st.session_state.draft_sequence
+            rotated_sequence = old_sequence[1:] + [old_sequence[0]]
+            st.session_state.draft_sequence = rotated_sequence
+            
+            st.toast(f"Moving to Lot {st.session_state.current_lot}! Sequence rotated automatically.")
             st.rerun()
         else:
             st.balloons()
@@ -169,8 +175,10 @@ elif page == "Selector Draft Room":
         
     current_turn_selector = st.session_state.draft_sequence[players_picked_in_this_lot]
 
+    # Manual Shuffle (Overwrites the current order, future rounds will rotate from this point)
     if players_picked_in_this_lot == 0:
-        if st.button("🔀 Shuffle Pick Order for this Lot", type="secondary", key="shuffle_v5"):
+        st.info("🔄 Order will rotate automatically for each lot. Use the button below only if you want to force a completely new sequence.")
+        if st.button("🔀 Manual Shuffle for this Lot", type="secondary", key="shuffle_v6"):
             selectors = ["Selector 1", "Selector 2", "Selector 3", "Selector 4"]
             random.shuffle(selectors)
             st.session_state.draft_sequence = selectors
@@ -204,10 +212,10 @@ elif page == "Selector Draft Room":
     options = [p["name"] for p in available_in_lot]
     
     if options:
-        radio_id = f"rad_v5_l{st.session_state.current_lot}_p{players_picked_in_this_lot}_len{len(options)}"
+        radio_id = f"rad_v6_l{st.session_state.current_lot}_p{players_picked_in_this_lot}_len{len(options)}"
         selected_player_name = st.radio("Select the player called out by the captain:", options, key=radio_id)
         
-        if st.button("Confirm Selection ➡️", type="primary", use_container_width=True, key=f"btn_v5_{radio_id}"):
+        if st.button("Confirm Selection ➡️", type="primary", use_container_width=True, key=f"btn_v6_{radio_id}"):
             with st.spinner(f"Processing pick... Assigning to {current_turn_selector}"):
                 player_obj = next(p for p in available_in_lot if p["name"] == selected_player_name)
                 st.session_state.teams[current_turn_selector].append(player_obj)
@@ -231,7 +239,7 @@ elif page == "Team Rosters":
             mime="application/pdf",
             use_container_width=True,
             type="primary",
-            key="pdf_download_btn_v5"
+            key="pdf_download_btn_v6"
         )
     except Exception as e:
         st.error(f"Error compiling PDF: {e}")
