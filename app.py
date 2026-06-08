@@ -32,7 +32,6 @@ if "teams" not in st.session_state:
 if "current_lot" not in st.session_state:
     st.session_state.current_lot = 1
 
-# Generate a randomized sequence order for the very first lot
 if "draft_sequence" not in st.session_state:
     selectors = ["Selector 1", "Selector 2", "Selector 3", "Selector 4"]
     random.shuffle(selectors)
@@ -42,7 +41,7 @@ st.title("🏏 Cricket Tournament Draft Portal")
 st.caption("🎙️ Admin-Led Central Control Mode")
 
 # Sidebar Navigation
-page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Team Rosters"], key="nav_menu_v6")
+page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Team Rosters"], key="nav_menu_v7")
 
 # Helper function to generate PDF bytes
 def generate_pdf(teams_data):
@@ -77,8 +76,74 @@ def generate_pdf(teams_data):
 if page == "Admin Dashboard":
     st.header("⚙️ Admin Dashboard: Player & Lot Management")
 
+    # NEW FEATURE: EXPORT AND IMPORT CSV CONTROLS
+    st.subheader("📊 CSV Data Utilities")
+    col_exp, col_imp = st.columns(2)
+    
+    with col_exp:
+        st.write("📂 **Backup Data**")
+        if st.session_state.players:
+            export_df = pd.DataFrame(st.session_state.players)
+            csv_buffer = export_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Export Players to CSV",
+                data=csv_buffer,
+                file_name="cricket_player_database.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        else:
+            st.info("No data available to export yet.")
+            
+    with col_imp:
+        st.write("📤 **Bulk Upload Data**")
+        uploaded_file = st.file_uploader("Upload players CSV file", type=["csv"], label_visibility="collapsed", key="csv_uploader_widget")
+        if uploaded_file is not None:
+            try:
+                uploaded_df = pd.read_csv(uploaded_file)
+                # Verify required headers exist
+                required_headers = {"name", "role", "lot"}
+                if not required_headers.issubset(set(uploaded_df.columns)):
+                    st.error("❌ Invalid CSV headers! Must contain exactly: 'name', 'role', and 'lot'")
+                else:
+                    success_count = 0
+                    duplicate_count = 0
+                    full_lot_count = 0
+                    
+                    for _, row in uploaded_df.iterrows():
+                        p_name = str(row['name']).strip()
+                        p_role = str(row['role']).strip()
+                        p_lot = int(row['lot'])
+                        
+                        # Apply standard registration guards
+                        existing_names = [p["name"].lower() for p in st.session_state.players]
+                        lot_count = sum(1 for p in st.session_state.players if p["lot"] == p_lot)
+                        
+                        if p_name.lower() in existing_names:
+                            duplicate_count += 1
+                        elif lot_count >= 4:
+                            full_lot_count += 1
+                        else:
+                            st.session_state.players.append({"name": p_name, "role": p_role, "lot": p_lot})
+                            success_count += 1
+                    
+                    if success_count > 0:
+                        st.success(f"✅ Successfully bulk-loaded {success_count} new players!")
+                    if duplicate_count > 0:
+                        st.warning(f"⚠️ Skipped {duplicate_count} duplicate names.")
+                    if full_lot_count > 0:
+                        st.error(f"❌ Skipped {full_lot_count} players because target lots were already at the max capacity of 4.")
+                    
+                    time.sleep(1.0)
+                    st.rerun()
+            except Exception as csv_err:
+                st.error(f"Error parsing file: {csv_err}")
+
+    st.write("---")
+
+    # Form to ADD players individually
     with st.form("add_player_form", clear_on_submit=True):
-        st.subheader("➕ Add New Player")
+        st.subheader("➕ Add Single New Player")
         name = st.text_input("Player Name").strip()
         role = st.selectbox("Role/Skill", ["Batter", "Bowler", "All-rounder"])
         lot_number = st.number_input("Assign to Lot Number", min_value=1, max_value=15, value=1, step=1)
@@ -102,9 +167,9 @@ if page == "Admin Dashboard":
     st.subheader("🗑️ Delete Existing Player")
     if st.session_state.players:
         player_options = [f"{p['name']} (Lot {p['lot']} - {p['role']})" for p in st.session_state.players]
-        player_to_delete_str = st.selectbox("Select player profile to remove:", player_options, key="delete_select_v6")
+        player_to_delete_str = st.selectbox("Select player profile to remove:", player_options, key="delete_select_v7")
         
-        if st.button("Delete Player Profile", type="primary", key="del_btn_v6"):
+        if st.button("Delete Player Profile", type="primary", key="del_btn_v7"):
             idx = player_options.index(player_to_delete_str)
             target_player = st.session_state.players[idx]
             st.session_state.players.pop(idx)
@@ -156,8 +221,7 @@ elif page == "Selector Draft Room":
         if remaining_lots:
             st.session_state.current_lot = min(remaining_lots)
             
-            # ROTATION RULE APPLIED HERE: Left-shift rotation based on previous lot order
-            # The first selector goes to the back, everyone else slides up one spot
+            # Left-shift rotation based on previous lot order
             old_sequence = st.session_state.draft_sequence
             rotated_sequence = old_sequence[1:] + [old_sequence[0]]
             st.session_state.draft_sequence = rotated_sequence
@@ -175,10 +239,9 @@ elif page == "Selector Draft Room":
         
     current_turn_selector = st.session_state.draft_sequence[players_picked_in_this_lot]
 
-    # Manual Shuffle (Overwrites the current order, future rounds will rotate from this point)
     if players_picked_in_this_lot == 0:
         st.info("🔄 Order will rotate automatically for each lot. Use the button below only if you want to force a completely new sequence.")
-        if st.button("🔀 Manual Shuffle for this Lot", type="secondary", key="shuffle_v6"):
+        if st.button("🔀 Manual Shuffle for this Lot", type="secondary", key="shuffle_v7"):
             selectors = ["Selector 1", "Selector 2", "Selector 3", "Selector 4"]
             random.shuffle(selectors)
             st.session_state.draft_sequence = selectors
@@ -212,10 +275,10 @@ elif page == "Selector Draft Room":
     options = [p["name"] for p in available_in_lot]
     
     if options:
-        radio_id = f"rad_v6_l{st.session_state.current_lot}_p{players_picked_in_this_lot}_len{len(options)}"
+        radio_id = f"rad_v7_l{st.session_state.current_lot}_p{players_picked_in_this_lot}_len{len(options)}"
         selected_player_name = st.radio("Select the player called out by the captain:", options, key=radio_id)
         
-        if st.button("Confirm Selection ➡️", type="primary", use_container_width=True, key=f"btn_v6_{radio_id}"):
+        if st.button("Confirm Selection ➡️", type="primary", use_container_width=True, key=f"btn_v7_{radio_id}"):
             with st.spinner(f"Processing pick... Assigning to {current_turn_selector}"):
                 player_obj = next(p for p in available_in_lot if p["name"] == selected_player_name)
                 st.session_state.teams[current_turn_selector].append(player_obj)
@@ -239,7 +302,7 @@ elif page == "Team Rosters":
             mime="application/pdf",
             use_container_width=True,
             type="primary",
-            key="pdf_download_btn_v6"
+            key="pdf_download_btn_v7"
         )
     except Exception as e:
         st.error(f"Error compiling PDF: {e}")
