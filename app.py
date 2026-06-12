@@ -31,6 +31,7 @@ if "teams" not in st.session_state:
 if "current_lot" not in st.session_state:
     st.session_state.current_lot = 1
 
+# Only the 1st lot sequence is randomized at startup
 if "draft_sequence" not in st.session_state:
     selectors = ["Selector 1", "Selector 2", "Selector 3"]
     random.shuffle(selectors)
@@ -40,7 +41,7 @@ st.title("🏏 Cricket Tournament Draft Portal")
 st.caption("🎙️ Admin-Led Central Control Mode (3 Selectors)")
 
 # Sidebar Navigation
-page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Team Rosters"], key="nav_menu_v9")
+page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Team Rosters"], key="nav_menu_v10")
 
 # Helper function to generate PDF bytes
 def generate_pdf(teams_data):
@@ -95,7 +96,7 @@ if page == "Admin Dashboard":
             
     with col_imp:
         st.write("📤 **Bulk Replace Database**")
-        uploaded_file = st.file_uploader("Upload new players CSV file", type=["csv"], label_visibility="collapsed", key="csv_uploader_v9")
+        uploaded_file = st.file_uploader("Upload new players CSV file", type=["csv"], label_visibility="collapsed", key="csv_uploader_v10")
         if uploaded_file is not None:
             try:
                 uploaded_df = pd.read_csv(uploaded_file)
@@ -164,9 +165,9 @@ if page == "Admin Dashboard":
     st.subheader("🗑️ Delete Existing Player")
     if st.session_state.players:
         player_options = [f"{p['name']} (Lot {p['lot']} - {p['role']})" for p in st.session_state.players]
-        player_to_delete_str = st.selectbox("Select player profile to remove:", player_options, key="delete_select_v9")
+        player_to_delete_str = st.selectbox("Select player profile to remove:", player_options, key="delete_select_v10")
         
-        if st.button("Delete Player Profile", type="primary", key="del_btn_v9"):
+        if st.button("Delete Player Profile", type="primary", key="del_btn_v10"):
             idx = player_options.index(player_to_delete_str)
             target_player = st.session_state.players[idx]
             st.session_state.players.pop(idx)
@@ -204,9 +205,7 @@ elif page == "Selector Draft Room":
             if not is_picked:
                 available_in_lot.append(p)
                 
-    # CRITICAL SCALE RULE FOR 3 SELECTORS:
-    # Since lots have 4 players, when exactly 1 player is left unpicked, that means all 3 selectors have had their turn.
-    # The final player is skipped, and we trigger a lot transition.
+    # Scale rule for 3 selectors: if only 1 player is left unpicked, advance lot immediately
     if len(available_in_lot) <= 1:
         remaining_lots = []
         for p in st.session_state.players:
@@ -221,12 +220,12 @@ elif page == "Selector Draft Room":
         if remaining_lots:
             st.session_state.current_lot = min(remaining_lots)
             
-            # Left-shift sequence rotation for 3 elements
+            # CONSECUTIVE ROUND AUTOMATIC LEFT-SHIFT ROTATION RULE
             old_sequence = st.session_state.draft_sequence
             rotated_sequence = old_sequence[1:] + [old_sequence[0]]
             st.session_state.draft_sequence = rotated_sequence
             
-            st.toast(f"Lot completed! Shifting automatically to Lot {st.session_state.current_lot}")
+            st.toast(f"Shifting automatically to Lot {st.session_state.current_lot}")
             st.rerun()
         else:
             st.balloons()
@@ -234,24 +233,11 @@ elif page == "Selector Draft Room":
             st.stop()
 
     # Calculate active selection pointer index (0, 1, or 2)
-    # 4 players available -> Pick 1
-    # 3 players available -> Pick 2
-    # 2 players available -> Pick 3
     players_picked_in_this_lot = 4 - len(available_in_lot)
     if players_picked_in_this_lot > 2:
         players_picked_in_this_lot = 2
         
     current_turn_selector = st.session_state.draft_sequence[players_picked_in_this_lot]
-
-    if players_picked_in_this_lot == 0:
-        st.info("🔄 Order will rotate automatically for each lot.")
-        if st.button("🔀 Manual Shuffle for this Lot", type="secondary", key="shuffle_v9"):
-            selectors = ["Selector 1", "Selector 2", "Selector 3"]
-            random.shuffle(selectors)
-            st.session_state.draft_sequence = selectors
-            st.rerun()
-
-    st.write("---")
 
     st.subheader("📋 Lot Picking Sequence")
     cols = st.columns(3)
@@ -276,18 +262,23 @@ elif page == "Selector Draft Room":
     st.write("---")
     st.subheader("Available Players in Lot")
     
-    options = [p["name"] for p in available_in_lot]
+    # FIX: Add an explicit clear placeholder text choice at index 0 so nothing is auto-selected
+    options_pool = ["-- Select a Player --"] + [p["name"] for p in available_in_lot]
     
-    if options:
-        radio_id = f"rad_v9_l{st.session_state.current_lot}_p{players_picked_in_this_lot}_len{len(options)}"
-        selected_player_name = st.radio("Select the player called out by the captain:", options, key=radio_id)
+    if len(options_pool) > 1:
+        radio_id = f"rad_v10_l{st.session_state.current_lot}_p{players_picked_in_this_lot}_len{len(options_pool)}"
+        selected_player_name = st.radio("Select the player called out by the captain:", options_pool, key=radio_id)
         
-        if st.button("Confirm Selection ➡️", type="primary", use_container_width=True, key=f"btn_v9_{radio_id}"):
-            with st.spinner(f"Processing pick... Assigning to {current_turn_selector}"):
-                player_obj = next(p for p in available_in_lot if p["name"] == selected_player_name)
-                st.session_state.teams[current_turn_selector].append(player_obj)
-                time.sleep(0.4) 
-            st.rerun()
+        if st.button("Confirm Selection ➡️", type="primary", use_container_width=True, key=f"btn_v10_{radio_id}"):
+            # Check if the admin forgot to choose a real player name
+            if selected_player_name == "-- Select a Player --":
+                st.error("⚠️ Error: Please pick a valid player from the options list first!")
+            else:
+                with st.spinner(f"Processing pick... Assigning to {current_turn_selector}"):
+                    player_obj = next(p for p in available_in_lot if p["name"] == selected_player_name)
+                    st.session_state.teams[current_turn_selector].append(player_obj)
+                    time.sleep(0.4) 
+                st.rerun()
     else:
         st.warning("No players currently available to draft.")
 
@@ -306,7 +297,7 @@ elif page == "Team Rosters":
             mime="application/pdf",
             use_container_width=True,
             type="primary",
-            key="pdf_download_btn_v9"
+            key="pdf_download_btn_v10"
         )
     except Exception as e:
         st.error(f"Error compiling PDF: {e}")
