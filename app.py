@@ -25,23 +25,22 @@ if "teams" not in st.session_state:
     st.session_state.teams = {
         "Selector 1": [],
         "Selector 2": [],
-        "Selector 3": [],
-        "Selector 4": []
+        "Selector 3": []
     }
 
 if "current_lot" not in st.session_state:
     st.session_state.current_lot = 1
 
 if "draft_sequence" not in st.session_state:
-    selectors = ["Selector 1", "Selector 2", "Selector 3", "Selector 4"]
+    selectors = ["Selector 1", "Selector 2", "Selector 3"]
     random.shuffle(selectors)
     st.session_state.draft_sequence = selectors
 
 st.title("🏏 Cricket Tournament Draft Portal")
-st.caption("🎙️ Admin-Led Central Control Mode")
+st.caption("🎙️ Admin-Led Central Control Mode (3 Selectors)")
 
 # Sidebar Navigation
-page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Team Rosters"], key="nav_menu_v8")
+page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Team Rosters"], key="nav_menu_v9")
 
 # Helper function to generate PDF bytes
 def generate_pdf(teams_data):
@@ -96,7 +95,7 @@ if page == "Admin Dashboard":
             
     with col_imp:
         st.write("📤 **Bulk Replace Database**")
-        uploaded_file = st.file_uploader("Upload new players CSV file", type=["csv"], label_visibility="collapsed", key="csv_uploader_v8")
+        uploaded_file = st.file_uploader("Upload new players CSV file", type=["csv"], label_visibility="collapsed", key="csv_uploader_v9")
         if uploaded_file is not None:
             try:
                 uploaded_df = pd.read_csv(uploaded_file)
@@ -104,23 +103,18 @@ if page == "Admin Dashboard":
                 if not required_headers.issubset(set(uploaded_df.columns)):
                     st.error("❌ Invalid CSV headers! Must contain exactly: 'name', 'role', and 'lot'")
                 else:
-                    # CRITICAL OVERRIDE ACTION: Wipe current database completely
                     st.session_state.players = []
-                    
-                    # Reset all drafted team rosters back to zero
                     for team in st.session_state.teams:
                         st.session_state.teams[team] = []
                         
-                    # Reset Draft variables back to start parameters
                     st.session_state.current_lot = 1
-                    selectors = ["Selector 1", "Selector 2", "Selector 3", "Selector 4"]
+                    selectors = ["Selector 1", "Selector 2", "Selector 3"]
                     random.shuffle(selectors)
                     st.session_state.draft_sequence = selectors
                     
                     success_count = 0
                     full_lot_count = 0
                     
-                    # Mass load entries sequentially without validation checks
                     for _, row in uploaded_df.iterrows():
                         p_name = str(row['name']).strip()
                         p_role = str(row['role']).strip()
@@ -128,7 +122,6 @@ if page == "Admin Dashboard":
                         
                         lot_count = sum(1 for p in st.session_state.players if p["lot"] == p_lot)
                         
-                        # Enforce lot sizing cap rule boundary
                         if lot_count >= 4:
                             full_lot_count += 1
                         else:
@@ -146,7 +139,6 @@ if page == "Admin Dashboard":
 
     st.write("---")
 
-    # Form to ADD players individually
     with st.form("add_player_form", clear_on_submit=True):
         st.subheader("➕ Add Single New Player")
         name = st.text_input("Player Name").strip()
@@ -172,9 +164,9 @@ if page == "Admin Dashboard":
     st.subheader("🗑️ Delete Existing Player")
     if st.session_state.players:
         player_options = [f"{p['name']} (Lot {p['lot']} - {p['role']})" for p in st.session_state.players]
-        player_to_delete_str = st.selectbox("Select player profile to remove:", player_options, key="delete_select_v8")
+        player_to_delete_str = st.selectbox("Select player profile to remove:", player_options, key="delete_select_v9")
         
-        if st.button("Delete Player Profile", type="primary", key="del_btn_v8"):
+        if st.button("Delete Player Profile", type="primary", key="del_btn_v9"):
             idx = player_options.index(player_to_delete_str)
             target_player = st.session_state.players[idx]
             st.session_state.players.pop(idx)
@@ -200,6 +192,7 @@ if page == "Admin Dashboard":
 elif page == "Selector Draft Room":
     st.header("🎯 Live Draft Room")
     
+    # Track available players remaining in the active lot
     available_in_lot = []
     for p in st.session_state.players:
         if p["lot"] == st.session_state.current_lot:
@@ -210,8 +203,11 @@ elif page == "Selector Draft Room":
                     break
             if not is_picked:
                 available_in_lot.append(p)
-    
-    if not available_in_lot:
+                
+    # CRITICAL SCALE RULE FOR 3 SELECTORS:
+    # Since lots have 4 players, when exactly 1 player is left unpicked, that means all 3 selectors have had their turn.
+    # The final player is skipped, and we trigger a lot transition.
+    if len(available_in_lot) <= 1:
         remaining_lots = []
         for p in st.session_state.players:
             is_picked = False
@@ -219,34 +215,38 @@ elif page == "Selector Draft Room":
                 if any(t["name"] == p["name"] and t["lot"] == p["lot"] and t["role"] == p["role"] for t in team_squad):
                     is_picked = True
                     break
-            if not is_picked:
+            if not is_picked and p["lot"] > st.session_state.current_lot:
                 remaining_lots.append(p["lot"])
                 
         if remaining_lots:
             st.session_state.current_lot = min(remaining_lots)
             
-            # Left-shift rotation based on previous lot order
+            # Left-shift sequence rotation for 3 elements
             old_sequence = st.session_state.draft_sequence
             rotated_sequence = old_sequence[1:] + [old_sequence[0]]
             st.session_state.draft_sequence = rotated_sequence
             
-            st.toast(f"Moving to Lot {st.session_state.current_lot}! Sequence rotated automatically.")
+            st.toast(f"Lot completed! Shifting automatically to Lot {st.session_state.current_lot}")
             st.rerun()
         else:
             st.balloons()
             st.success("🎉 All lots completed! The draft is officially over.")
             st.stop()
 
+    # Calculate active selection pointer index (0, 1, or 2)
+    # 4 players available -> Pick 1
+    # 3 players available -> Pick 2
+    # 2 players available -> Pick 3
     players_picked_in_this_lot = 4 - len(available_in_lot)
-    if players_picked_in_this_lot > 3:
-        players_picked_in_this_lot = 3
+    if players_picked_in_this_lot > 2:
+        players_picked_in_this_lot = 2
         
     current_turn_selector = st.session_state.draft_sequence[players_picked_in_this_lot]
 
     if players_picked_in_this_lot == 0:
-        st.info("🔄 Order will rotate automatically for each lot. Use the button below only if you want to force a completely new sequence.")
-        if st.button("🔀 Manual Shuffle for this Lot", type="secondary", key="shuffle_v8"):
-            selectors = ["Selector 1", "Selector 2", "Selector 3", "Selector 4"]
+        st.info("🔄 Order will rotate automatically for each lot.")
+        if st.button("🔀 Manual Shuffle for this Lot", type="secondary", key="shuffle_v9"):
+            selectors = ["Selector 1", "Selector 2", "Selector 3"]
             random.shuffle(selectors)
             st.session_state.draft_sequence = selectors
             st.rerun()
@@ -254,7 +254,7 @@ elif page == "Selector Draft Room":
     st.write("---")
 
     st.subheader("📋 Lot Picking Sequence")
-    cols = st.columns(4)
+    cols = st.columns(3)
     for index, selector_name in enumerate(st.session_state.draft_sequence):
         with cols[index]:
             if index == players_picked_in_this_lot:
@@ -279,17 +279,17 @@ elif page == "Selector Draft Room":
     options = [p["name"] for p in available_in_lot]
     
     if options:
-        radio_id = f"rad_v8_l{st.session_state.current_lot}_p{players_picked_in_this_lot}_len{len(options)}"
+        radio_id = f"rad_v9_l{st.session_state.current_lot}_p{players_picked_in_this_lot}_len{len(options)}"
         selected_player_name = st.radio("Select the player called out by the captain:", options, key=radio_id)
         
-        if st.button("Confirm Selection ➡️", type="primary", use_container_width=True, key=f"btn_v8_{radio_id}"):
+        if st.button("Confirm Selection ➡️", type="primary", use_container_width=True, key=f"btn_v9_{radio_id}"):
             with st.spinner(f"Processing pick... Assigning to {current_turn_selector}"):
                 player_obj = next(p for p in available_in_lot if p["name"] == selected_player_name)
                 st.session_state.teams[current_turn_selector].append(player_obj)
                 time.sleep(0.4) 
             st.rerun()
     else:
-        st.warning("No players currently available to draft in this lot.")
+        st.warning("No players currently available to draft.")
 
 # ------------------------------------------------------------------
 # TEAM ROSTERS
@@ -306,14 +306,14 @@ elif page == "Team Rosters":
             mime="application/pdf",
             use_container_width=True,
             type="primary",
-            key="pdf_download_btn_v8"
+            key="pdf_download_btn_v9"
         )
     except Exception as e:
         st.error(f"Error compiling PDF: {e}")
         
     st.write("---")
     
-    cols = st.columns(4)
+    cols = st.columns(3)
     for i, (team_name, squad) in enumerate(st.session_state.teams.items()):
         with cols[i]:
             st.subheader(team_name)
