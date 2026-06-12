@@ -6,19 +6,14 @@ from fpdf import FPDF
 
 # Initialize session state for single-device data persistence
 if "players" not in st.session_state:
+    # Pre-populating with an updated 3-player-per-lot example
     st.session_state.players = [
-        {"name": "Kevin", "role": "Batter", "lot": 1},
-        {"name": "Suresh", "role": "Batter", "lot": 1},
-        {"name": "Sathish", "role": "Batter", "lot": 1},
-        {"name": "Ben", "role": "Batter", "lot": 1},
+        {"name": "Vijay Natarajan", "role": "Batter", "lot": 1},
+        {"name": "Ram", "role": "Batter", "lot": 1},
+        {"name": "Bhargav", "role": "Batter", "lot": 1},
         {"name": "Kannan", "role": "Bowler", "lot": 2},
         {"name": "KD", "role": "Bowler", "lot": 2},
         {"name": "Joy", "role": "Bowler", "lot": 2},
-        {"name": "Raghu", "role": "Bowler", "lot": 2},
-        {"name": "Maddy", "role": "All-rounder", "lot": 3},
-        {"name": "Hari", "role": "All-rounder", "lot": 3},
-        {"name": "Arun", "role": "All-rounder", "lot": 3},
-        {"name": "Vijay", "role": "All-rounder", "lot": 3},
     ]
 
 if "teams" not in st.session_state:
@@ -31,17 +26,16 @@ if "teams" not in st.session_state:
 if "current_lot" not in st.session_state:
     st.session_state.current_lot = 1
 
-# Only the 1st lot sequence is randomized at startup
 if "draft_sequence" not in st.session_state:
     selectors = ["Selector 1", "Selector 2", "Selector 3"]
     random.shuffle(selectors)
     st.session_state.draft_sequence = selectors
 
 st.title("🏏 Cricket Tournament Draft Portal")
-st.caption("🎙️ Admin-Led Central Control Mode (3 Selectors)")
+st.caption("🎙️ Admin-Led Central Control Mode (3 Selectors | 3 Players Per Lot)")
 
 # Sidebar Navigation
-page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Team Rosters"], key="nav_menu_v10")
+page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Team Rosters"], key="nav_menu_v11")
 
 # Helper function to generate PDF bytes
 def generate_pdf(teams_data):
@@ -96,7 +90,7 @@ if page == "Admin Dashboard":
             
     with col_imp:
         st.write("📤 **Bulk Replace Database**")
-        uploaded_file = st.file_uploader("Upload new players CSV file", type=["csv"], label_visibility="collapsed", key="csv_uploader_v10")
+        uploaded_file = st.file_uploader("Upload new players CSV file", type=["csv"], label_visibility="collapsed", key="csv_uploader_v11")
         if uploaded_file is not None:
             try:
                 uploaded_df = pd.read_csv(uploaded_file)
@@ -123,7 +117,8 @@ if page == "Admin Dashboard":
                         
                         lot_count = sum(1 for p in st.session_state.players if p["lot"] == p_lot)
                         
-                        if lot_count >= 4:
+                        # CHANGED: Cap lot sizing rule to 3 players maximum
+                        if lot_count >= 3:
                             full_lot_count += 1
                         else:
                             st.session_state.players.append({"name": p_name, "role": p_role, "lot": p_lot})
@@ -131,7 +126,7 @@ if page == "Admin Dashboard":
                     
                     st.success(f"💥 Database overwritten! {success_count} fresh entries loaded successfully.")
                     if full_lot_count > 0:
-                        st.error(f"❌ Skipped {full_lot_count} records because target lots were already filled with 4 players.")
+                        st.error(f"❌ Skipped {full_lot_count} records because target lots were already filled with 3 players.")
                     
                     time.sleep(1.0)
                     st.rerun()
@@ -153,8 +148,9 @@ if page == "Admin Dashboard":
                 st.error(f"❌ Safeguard Active: '{name}' is already registered.")
             else:
                 lot_count = sum(1 for p in st.session_state.players if p["lot"] == lot_number)
-                if lot_count >= 4:
-                    st.error(f"❌ Lot {lot_number} is already full!")
+                # CHANGED: Cap single entry sizing rule to 3 players maximum
+                if lot_count >= 3:
+                    st.error(f"❌ Lot {lot_number} is already full! (Max 3 players per lot)")
                 else:
                     st.session_state.players.append({"name": name, "role": role, "lot": lot_number})
                     st.success(f"✅ Added {name} to Lot {lot_number} as a {role}")
@@ -165,9 +161,9 @@ if page == "Admin Dashboard":
     st.subheader("🗑️ Delete Existing Player")
     if st.session_state.players:
         player_options = [f"{p['name']} (Lot {p['lot']} - {p['role']})" for p in st.session_state.players]
-        player_to_delete_str = st.selectbox("Select player profile to remove:", player_options, key="delete_select_v10")
+        player_to_delete_str = st.selectbox("Select player profile to remove:", player_options, key="delete_select_v11")
         
-        if st.button("Delete Player Profile", type="primary", key="del_btn_v10"):
+        if st.button("Delete Player Profile", type="primary", key="del_btn_v11"):
             idx = player_options.index(player_to_delete_str)
             target_player = st.session_state.players[idx]
             st.session_state.players.pop(idx)
@@ -205,8 +201,9 @@ elif page == "Selector Draft Room":
             if not is_picked:
                 available_in_lot.append(p)
                 
-    # Scale rule for 3 selectors: if only 1 player is left unpicked, advance lot immediately
-    if len(available_in_lot) <= 1:
+    # CHANGED SCALE RULE FOR 3 PLAYERS PER LOT: 
+    # Move to the next lot only when all 3 players in this lot have been drafted (0 remaining)
+    if len(available_in_lot) == 0:
         remaining_lots = []
         for p in st.session_state.players:
             is_picked = False
@@ -220,7 +217,7 @@ elif page == "Selector Draft Room":
         if remaining_lots:
             st.session_state.current_lot = min(remaining_lots)
             
-            # CONSECUTIVE ROUND AUTOMATIC LEFT-SHIFT ROTATION RULE
+            # Left-shift sequence rotation rule for consecutive round transitions
             old_sequence = st.session_state.draft_sequence
             rotated_sequence = old_sequence[1:] + [old_sequence[0]]
             st.session_state.draft_sequence = rotated_sequence
@@ -232,8 +229,11 @@ elif page == "Selector Draft Room":
             st.success("🎉 All lots completed! The draft is officially over.")
             st.stop()
 
-    # Calculate active selection pointer index (0, 1, or 2)
-    players_picked_in_this_lot = 4 - len(available_in_lot)
+    # CHANGED: Calculate active selection pointer index based on max 3 players per lot
+    # 3 players available -> Pick 1 (index 0)
+    # 2 players available -> Pick 2 (index 1)
+    # 1 player available  -> Pick 3 (index 2)
+    players_picked_in_this_lot = 3 - len(available_in_lot)
     if players_picked_in_this_lot > 2:
         players_picked_in_this_lot = 2
         
@@ -262,15 +262,13 @@ elif page == "Selector Draft Room":
     st.write("---")
     st.subheader("Available Players in Lot")
     
-    # FIX: Add an explicit clear placeholder text choice at index 0 so nothing is auto-selected
     options_pool = ["-- Select a Player --"] + [p["name"] for p in available_in_lot]
     
     if len(options_pool) > 1:
-        radio_id = f"rad_v10_l{st.session_state.current_lot}_p{players_picked_in_this_lot}_len{len(options_pool)}"
+        radio_id = f"rad_v11_l{st.session_state.current_lot}_p{players_picked_in_this_lot}_len{len(options_pool)}"
         selected_player_name = st.radio("Select the player called out by the captain:", options_pool, key=radio_id)
         
-        if st.button("Confirm Selection ➡️", type="primary", use_container_width=True, key=f"btn_v10_{radio_id}"):
-            # Check if the admin forgot to choose a real player name
+        if st.button("Confirm Selection ➡️", type="primary", use_container_width=True, key=f"btn_v11_{radio_id}"):
             if selected_player_name == "-- Select a Player --":
                 st.error("⚠️ Error: Please pick a valid player from the options list first!")
             else:
@@ -297,7 +295,7 @@ elif page == "Team Rosters":
             mime="application/pdf",
             use_container_width=True,
             type="primary",
-            key="pdf_download_btn_v10"
+            key="pdf_download_btn_v11"
         )
     except Exception as e:
         st.error(f"Error compiling PDF: {e}")
