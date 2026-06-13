@@ -6,7 +6,6 @@ from fpdf import FPDF
 
 # Initialize session state for single-device data persistence
 if "players" not in st.session_state:
-    # Pre-populating with an updated 3-player-per-lot example
     st.session_state.players = [
         {"name": "Vijay Natarajan", "role": "Batter", "lot": 1},
         {"name": "Ram", "role": "Batter", "lot": 1},
@@ -31,11 +30,15 @@ if "draft_sequence" not in st.session_state:
     random.shuffle(selectors)
     st.session_state.draft_sequence = selectors
 
+# Track if the draft has officially started (first pick made)
+if "draft_started" not in st.session_state:
+    st.session_state.draft_started = False
+
 st.title("🏏 Cricket Tournament Draft Portal")
 st.caption("🎙️ Admin-Led Central Control Mode (3 Selectors | 3 Players Per Lot)")
 
 # Sidebar Navigation
-page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Team Rosters"], key="nav_menu_v11")
+page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Team Rosters"], key="nav_menu_v12")
 
 # Helper function to generate PDF bytes
 def generate_pdf(teams_data):
@@ -90,7 +93,7 @@ if page == "Admin Dashboard":
             
     with col_imp:
         st.write("📤 **Bulk Replace Database**")
-        uploaded_file = st.file_uploader("Upload new players CSV file", type=["csv"], label_visibility="collapsed", key="csv_uploader_v11")
+        uploaded_file = st.file_uploader("Upload new players CSV file", type=["csv"], label_visibility="collapsed", key="csv_uploader_v12")
         if uploaded_file is not None:
             try:
                 uploaded_df = pd.read_csv(uploaded_file)
@@ -103,6 +106,7 @@ if page == "Admin Dashboard":
                         st.session_state.teams[team] = []
                         
                     st.session_state.current_lot = 1
+                    st.session_state.draft_started = False  # Reset draft start status
                     selectors = ["Selector 1", "Selector 2", "Selector 3"]
                     random.shuffle(selectors)
                     st.session_state.draft_sequence = selectors
@@ -117,7 +121,6 @@ if page == "Admin Dashboard":
                         
                         lot_count = sum(1 for p in st.session_state.players if p["lot"] == p_lot)
                         
-                        # CHANGED: Cap lot sizing rule to 3 players maximum
                         if lot_count >= 3:
                             full_lot_count += 1
                         else:
@@ -148,7 +151,6 @@ if page == "Admin Dashboard":
                 st.error(f"❌ Safeguard Active: '{name}' is already registered.")
             else:
                 lot_count = sum(1 for p in st.session_state.players if p["lot"] == lot_number)
-                # CHANGED: Cap single entry sizing rule to 3 players maximum
                 if lot_count >= 3:
                     st.error(f"❌ Lot {lot_number} is already full! (Max 3 players per lot)")
                 else:
@@ -161,9 +163,9 @@ if page == "Admin Dashboard":
     st.subheader("🗑️ Delete Existing Player")
     if st.session_state.players:
         player_options = [f"{p['name']} (Lot {p['lot']} - {p['role']})" for p in st.session_state.players]
-        player_to_delete_str = st.selectbox("Select player profile to remove:", player_options, key="delete_select_v11")
+        player_to_delete_str = st.selectbox("Select player profile to remove:", player_options, key="delete_select_v12")
         
-        if st.button("Delete Player Profile", type="primary", key="del_btn_v11"):
+        if st.button("Delete Player Profile", type="primary", key="del_btn_v12"):
             idx = player_options.index(player_to_delete_str)
             target_player = st.session_state.players[idx]
             st.session_state.players.pop(idx)
@@ -201,8 +203,7 @@ elif page == "Selector Draft Room":
             if not is_picked:
                 available_in_lot.append(p)
                 
-    # CHANGED SCALE RULE FOR 3 PLAYERS PER LOT: 
-    # Move to the next lot only when all 3 players in this lot have been drafted (0 remaining)
+    # Move to the next lot only when all 3 players in this lot have been drafted
     if len(available_in_lot) == 0:
         remaining_lots = []
         for p in st.session_state.players:
@@ -217,7 +218,7 @@ elif page == "Selector Draft Room":
         if remaining_lots:
             st.session_state.current_lot = min(remaining_lots)
             
-            # Left-shift sequence rotation rule for consecutive round transitions
+            # Left-shift sequence rotation rule for consecutive rounds
             old_sequence = st.session_state.draft_sequence
             rotated_sequence = old_sequence[1:] + [old_sequence[0]]
             st.session_state.draft_sequence = rotated_sequence
@@ -229,15 +230,25 @@ elif page == "Selector Draft Room":
             st.success("🎉 All lots completed! The draft is officially over.")
             st.stop()
 
-    # CHANGED: Calculate active selection pointer index based on max 3 players per lot
-    # 3 players available -> Pick 1 (index 0)
-    # 2 players available -> Pick 2 (index 1)
-    # 1 player available  -> Pick 3 (index 2)
+    # Calculate active selection pointer index based on 3 players per lot
     players_picked_in_this_lot = 3 - len(available_in_lot)
     if players_picked_in_this_lot > 2:
         players_picked_in_this_lot = 2
         
     current_turn_selector = st.session_state.draft_sequence[players_picked_in_this_lot]
+
+    # NEW SHUFFLE SAFEGUARD RULE:
+    # Only allow a shuffle if the draft has NOT started yet (Lot 1, Pick 1)
+    if st.session_state.current_lot == 1 and not st.session_state.draft_started and players_picked_in_this_lot == 0:
+        st.info("💡 The draft has not started yet. You can shuffle the initial selector order below as many times as you like before the first pick!")
+        if st.button("🔀 Shuffle Initial Draft Order", type="secondary", key="one_time_shuffle_btn"):
+            selectors = ["Selector 1", "Selector 2", "Selector 3"]
+            random.shuffle(selectors)
+            st.session_state.draft_sequence = selectors
+            st.toast("🎲 Initial Order Shuffled!")
+            st.rerun()
+
+    st.write("---")
 
     st.subheader("📋 Lot Picking Sequence")
     cols = st.columns(3)
@@ -265,14 +276,17 @@ elif page == "Selector Draft Room":
     options_pool = ["-- Select a Player --"] + [p["name"] for p in available_in_lot]
     
     if len(options_pool) > 1:
-        radio_id = f"rad_v11_l{st.session_state.current_lot}_p{players_picked_in_this_lot}_len{len(options_pool)}"
+        radio_id = f"rad_v12_l{st.session_state.current_lot}_p{players_picked_in_this_lot}_len{len(options_pool)}"
         selected_player_name = st.radio("Select the player called out by the captain:", options_pool, key=radio_id)
         
-        if st.button("Confirm Selection ➡️", type="primary", use_container_width=True, key=f"btn_v11_{radio_id}"):
+        if st.button("Confirm Selection ➡️", type="primary", use_container_width=True, key=f"btn_v12_{radio_id}"):
             if selected_player_name == "-- Select a Player --":
                 st.error("⚠️ Error: Please pick a valid player from the options list first!")
             else:
                 with st.spinner(f"Processing pick... Assigning to {current_turn_selector}"):
+                    # Lock the shuffle flag down forever the second the first pick is confirmed
+                    st.session_state.draft_started = True
+                    
                     player_obj = next(p for p in available_in_lot if p["name"] == selected_player_name)
                     st.session_state.teams[current_turn_selector].append(player_obj)
                     time.sleep(0.4) 
@@ -295,7 +309,7 @@ elif page == "Team Rosters":
             mime="application/pdf",
             use_container_width=True,
             type="primary",
-            key="pdf_download_btn_v11"
+            key="pdf_download_btn_v12"
         )
     except Exception as e:
         st.error(f"Error compiling PDF: {e}")
