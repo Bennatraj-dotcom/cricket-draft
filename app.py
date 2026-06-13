@@ -33,11 +33,9 @@ if "draft_sequence" not in st.session_state:
 if "draft_started" not in st.session_state:
     st.session_state.draft_started = False
 
-# TIMER CONFIGURATION PARAMETERS (Set Default Turn Limit here in seconds)
-TURN_LIMIT_SECONDS = 60
-
+# STOPWATCH CONFIGURATION (Starts climbing from 0)
 if "timer_seconds" not in st.session_state:
-    st.session_state.timer_seconds = TURN_LIMIT_SECONDS
+    st.session_state.timer_seconds = 0
 
 if "timer_running" not in st.session_state:
     st.session_state.timer_running = False
@@ -46,7 +44,7 @@ st.title("🏏 Cricket Tournament Draft Portal")
 st.caption("🎙️ Admin-Led Central Control Mode (3 Selectors | 3 Players Per Lot)")
 
 # Sidebar Navigation
-page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Team Rosters"], key="nav_menu_v13")
+page = st.sidebar.radio("Go to", ["Admin Dashboard", "Selector Draft Room", "Team Rosters"], key="nav_menu_v14")
 
 # Helper function to generate PDF bytes
 def generate_pdf(teams_data):
@@ -101,7 +99,7 @@ if page == "Admin Dashboard":
             
     with col_imp:
         st.write("📤 **Bulk Replace Database**")
-        uploaded_file = st.file_uploader("Upload new players CSV file", type=["csv"], label_visibility="collapsed", key="csv_uploader_v13")
+        uploaded_file = st.file_uploader("Upload new players CSV file", type=["csv"], label_visibility="collapsed", key="csv_uploader_v14")
         if uploaded_file is not None:
             try:
                 uploaded_df = pd.read_csv(uploaded_file)
@@ -115,7 +113,7 @@ if page == "Admin Dashboard":
                         
                     st.session_state.current_lot = 1
                     st.session_state.draft_started = False
-                    st.session_state.timer_seconds = TURN_LIMIT_SECONDS
+                    st.session_state.timer_seconds = 0
                     st.session_state.timer_running = False
                     selectors = ["Selector 1", "Selector 2", "Selector 3"]
                     random.shuffle(selectors)
@@ -173,9 +171,9 @@ if page == "Admin Dashboard":
     st.subheader("🗑️ Delete Existing Player")
     if st.session_state.players:
         player_options = [f"{p['name']} (Lot {p['lot']} - {p['role']})" for p in st.session_state.players]
-        player_to_delete_str = st.selectbox("Select player profile to remove:", player_options, key="delete_select_v13")
+        player_to_delete_str = st.selectbox("Select player profile to remove:", player_options, key="delete_select_v14")
         
-        if st.button("Delete Player Profile", type="primary", key="del_btn_v13"):
+        if st.button("Delete Player Profile", type="primary", key="del_btn_v14"):
             idx = player_options.index(player_to_delete_str)
             target_player = st.session_state.players[idx]
             st.session_state.players.pop(idx)
@@ -282,11 +280,10 @@ elif page == "Selector Draft Room":
     st.write("---")
     
     # ------------------------------------------------------------------
-    # NEW INTEGRATED LIVE TIMER COMPONENT
+    # REVISED UPWARDS STOPWATCH COMPONENT
     # ------------------------------------------------------------------
-    st.subheader("⏱️ Selector Turn Timer")
+    st.subheader("⏱️ Turn Stopwatch")
     
-    # Render timer control state buttons layout
     t_col1, t_col2, t_col3 = st.columns(3)
     with t_col1:
         if st.button("▶️ Start Timer", use_container_width=True, key="start_timer_key"):
@@ -296,26 +293,24 @@ elif page == "Selector Draft Room":
             st.session_state.timer_running = False
     with t_col3:
         if st.button("🔄 Reset Timer", use_container_width=True, key="reset_timer_key"):
-            st.session_state.timer_seconds = TURN_LIMIT_SECONDS
+            st.session_state.timer_seconds = 0
             st.session_state.timer_running = False
             st.rerun()
 
-    # Dynamic visual countdown mechanism block
     timer_placeholder = st.empty()
     
-    if st.session_state.timer_running and st.session_state.timer_seconds > 0:
-        # Subtract one second, wait, and re-run top-to-bottom automatically
-        st.session_state.timer_seconds -= 1
+    # Increment loop mechanism
+    if st.session_state.timer_running:
+        st.session_state.timer_seconds += 1
         time.sleep(1.0)
         st.rerun()
 
-    # Style header color based on remaining time depth parameters
-    if st.session_state.timer_seconds == 0:
-        timer_placeholder.markdown("<h2 style='text-align: center; color: #FF4B4B; background-color: #ffebeb; padding: 10px; border-radius: 5px;'>🚨 TIME OUT! Make a Choice! 🚨</h2>", unsafe_allow_html=True)
-    elif st.session_state.timer_seconds <= 10:
-        timer_placeholder.markdown(f"<h2 style='text-align: center; color: #FF4B4B;'>⏳ Time Remaining: {st.session_state.timer_seconds}s (HURRY!)</h2>", unsafe_allow_html=True)
+    # Visual layout display mapping the rising duration metric
+    if st.session_state.timer_seconds >= 60:
+        # Changes color to warning amber if they cross a full minute threshold
+        timer_placeholder.markdown(f"<h2 style='text-align: center; color: #FF9800;'>⏳ Duration: {st.session_state.timer_seconds}s</h2>", unsafe_allow_html=True)
     else:
-        timer_placeholder.markdown(f"<h2 style='text-align: center; color: #1E88E5;'>⏱️ Time Remaining: {st.session_state.timer_seconds}s</h2>", unsafe_allow_html=True)
+        timer_placeholder.markdown(f"<h2 style='text-align: center; color: #1E88E5;'>⏱️ Duration: {st.session_state.timer_seconds}s</h2>", unsafe_allow_html=True)
 
     st.write("---")
     st.subheader("Available Players in Lot")
@@ -323,22 +318,21 @@ elif page == "Selector Draft Room":
     options_pool = ["-- Select a Player --"] + [p["name"] for p in available_in_lot]
     
     if len(options_pool) > 1:
-        radio_id = f"rad_v13_l{st.session_state.current_lot}_p{players_picked_in_this_lot}_len{len(options_pool)}"
+        radio_id = f"rad_v14_l{st.session_state.current_lot}_p{players_picked_in_this_lot}_len{len(options_pool)}"
         selected_player_name = st.radio("Select the player called out by the captain:", options_pool, key=radio_id)
         
-        if st.button("Confirm Selection ➡️", type="primary", use_container_width=True, key=f"btn_v13_{radio_id}"):
+        if st.button("Confirm Selection ➡️", type="primary", use_container_width=True, key=f"btn_v14_{radio_id}"):
             if selected_player_name == "-- Select a Player --":
                 st.error("⚠️ Error: Please pick a valid player from the options list first!")
             else:
                 with st.spinner(f"Processing pick... Assigning to {current_turn_selector}"):
                     st.session_state.draft_started = True
                     
-                    # Store assigned player profile elements
                     player_obj = next(p for p in available_in_lot if p["name"] == selected_player_name)
                     st.session_state.teams[current_turn_selector].append(player_obj)
                     
-                    # SAFEGUARD AUTO-RESET TIMER: Prepare clock for the next upcoming selection round instantly
-                    st.session_state.timer_seconds = TURN_LIMIT_SECONDS
+                    # AUTO-RESET CLOCK: Drop stopwatch back to 0s for the incoming round
+                    st.session_state.timer_seconds = 0
                     st.session_state.timer_running = False
                     
                     time.sleep(0.4) 
@@ -361,7 +355,7 @@ elif page == "Team Rosters":
             mime="application/pdf",
             use_container_width=True,
             type="primary",
-            key="pdf_download_btn_v13"
+            key="pdf_download_btn_v14"
         )
     except Exception as e:
         st.error(f"Error compiling PDF: {e}")
